@@ -25,25 +25,8 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
         sliders_handle
         tabs_handle
         
-        PuBu1 = [255,247,251]/255
-        PuBu2 = [236,231,242]/255
-        PuBu3 = [208,209,230]/255
-        PuBu4 = [166,189,219]/255
-        PuBu5 = [116,169,207]/255
-        PuBu6 = [54,144,192]/255
-        PuBu7 = [5,112,176]/255
-        PuBu8 = [4,90,141]/255
-        PuBu9 = [2,56,88]/255
-        
-        YlGnBu1 = [255,255,217]/255
-        YlGnBu2 = [237,248,177]/255
-        YlGnBu3 = [199,233,180]/255
-        YlGnBu4 = [127,205,187]/255
-        YlGnBu5 = [65,182,196]/255
-        YlGnBu6 = [29,145,192]/255
-        YlGnBu7 = [34,94,168]/255
-        YlGnBu8 = [37,52,148]/255
-        YlGnBu9 = [8,29,88]/255
+        baseModel
+        listener_handle
         
         lightGrey = [0.9 0.9 0.9]
         
@@ -59,8 +42,9 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
     methods (Access = public)
         
         % Constructor
-        function self = v_TimeSeriesAnalyzer()
+        function self = v_TimeSeriesAnalyzer(baseModel)
             self.figure_handle = NaN;
+            self.baseModel = baseModel;
             self.init();
 
             % Turn off warnings
@@ -86,6 +70,8 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
             self.axes_handle = struct();
             self.buttons_handle = struct();
             self.tabs_handle = struct();
+            
+            self.listener_handle = struct();
         end
 
         % Construct GUI
@@ -99,6 +85,8 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
             self.create_tabs();
             self.create_buttons();
             self.create_axes();
+            
+            self.set_listener();
             
             self.figure_handle.Visible = 'on';
         end
@@ -265,12 +253,20 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                 'Position',[10 10 100 self.button_height],...
                 'Units','pixels');
             
+            self.buttons_handle.toolbar_append = uicontrol(...
+                'Parent',self.tabs_handle.toolstab,...
+                'Style','pushbutton',...
+                'String','Append',...
+                'Tag','pushbutton_append',...
+                'Position',[110 10 100 self.button_height],...
+                'Units','pixels');
+            
             self.buttons_handle.toolbar_reset = uicontrol(...
                 'Parent',self.tabs_handle.toolstab,...
                 'Style','pushbutton',...
                 'String','Reset GUI',...
                 'Tag','pushbutton_reset',...
-                'Position',[110 10 100 self.button_height],...
+                'Position',[210 10 100 self.button_height],...
                 'Units','pixels');
 
             % plotwindow buttons
@@ -285,6 +281,40 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                 'Box', 'on');
             xlabel(self.axes_handle.time_axis, 'Time (s)');
             ylabel(self.axes_handle.time_axis, 'Amplitude (dB_{AE})');
+            
+            self.axes_handle.sparkline_axis = cell(1,1);
+        end
+        
+        function draw_sparkline_axes(self)
+            for i = 1 : self.baseModel.n_timeSeries
+                self.axes_handle.sparkline_axis{i} = axes(...
+                    'Parent', self.tabs_handle.sparklinestab,...
+                    'XAxisLocation','origin',...
+                    'YAxisLocation','origin',...
+                    'Units','pixels',...
+                    'Position', [3+(i-1)*(self.button_height+3) 3 self.button_height self.button_height],...
+                    'Box','off',...
+                    'UserData',struct('index',i),...
+                    'NextPlot','add');
+                
+                
+                timeSeries = self.baseModel.timeSeries{i};
+                sampleRate = self.baseModel.metadata{self.baseModel.currentDataIndex,...
+                    self.baseModel.featureNames('SamplingRate')};
+                t = 1 : numel(timeSeries);
+                t = t'./sampleRate;
+                plothandle = plot(self.axes_handle.sparkline_axis{i}, t, timeSeries,...
+                    'Color',AnalyzerModel.Colors.YlGnBu6);
+                % Set HitTest off, so that Callback of Parent is called
+                set(plothandle, 'HitTest','off');
+                set(self.axes_handle.sparkline_axis{i}, 'XTick',[]);
+                set(self.axes_handle.sparkline_axis{i}, 'YTick',[]);
+            end
+        end
+        
+        function set_listener(self)
+            self.listener_handle.timeSeries = event.listener(self.baseModel, 'timeSeriesChanged',...
+                @(source,event) self.onChangedTimeSeries(source,event));
         end
     end
     
@@ -296,9 +326,9 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
     methods
         function out = get.button_image_dark(self)
             out = zeros(74,110,3);
-            out(:,:,1) = self.YlGnBu3(1);
-            out(:,:,2) = self.YlGnBu3(2);
-            out(:,:,3) = self.YlGnBu3(3);
+            out(:,:,1) = AnalyzerModel.Colors.YlGnBu3(1);
+            out(:,:,2) = AnalyzerModel.Colors.YlGnBu3(2);
+            out(:,:,3) = AnalyzerModel.Colors.YlGnBu3(3);
         end
 
         function out = get.button_image_light(self)
@@ -411,7 +441,7 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                 fprintf('Clicked %s\n', event.NewValue.Tag);
                 event.OldValue.ForegroundColor = [0 0 0];
                 event.OldValue.CData = self.button_image_light;
-                event.NewValue.ForegroundColor = self.YlGnBu9;
+                event.NewValue.ForegroundColor = AnalyzerModel.Colors.YlGnBu9;
                 event.NewValue.CData = self.button_image_dark;
             end
         end
@@ -423,6 +453,20 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
             if strcmp(object.Tag, 'pushbutton_reset')
                 self.build();
             end
+        end
+    end
+    
+    % Event Methods
+    methods (Access = private)
+        function onChangedTimeSeries(self, source, event)
+            timeSeries = self.baseModel.timeSeries{self.baseModel.currentDataIndex};
+            sampleRate = self.baseModel.metadata{self.baseModel.currentDataIndex,...
+                self.baseModel.featureNames('SamplingRate')};
+            t = 1 : numel(timeSeries);
+            t = t'./sampleRate;
+            plot(self.axes_handle.time_axis, t, timeSeries,...
+                    'Color',AnalyzerModel.Colors.YlGnBu6);
+            self.draw_sparkline_axes();
         end
     end
     
