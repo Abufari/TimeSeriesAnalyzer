@@ -19,4 +19,6 @@ rowoffset = size(lines_before_data,1);
 M = csvread(filename, rowoffset);
 M_single = cast(M, 'single');
 data = M_single(:,2);
+
+metadata.length = size(data, 1);
 end

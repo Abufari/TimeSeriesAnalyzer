@@ -1,5 +1,5 @@
 function [fileName, pathName, filterIndex] = loadFileDialog(fileExtensions, dialogTitle, startPath, multiselect, selectmode)
-if nargin == 4
+if nargin == 5
     multiselectmode = true;
 else
     multiselectmode = false;

@@ -8,8 +8,10 @@ classdef BaseModel < handle
         
         metadata = cell(10,10);
         featureMatrix = nan(10,10);
-        featureNames = containers.Map({'Filename', 'SamplingRate'},...
-            {1, 2});
+        metadataNames = {'Filename',...
+                         'Length',...
+                         'SamplingRate'};
+        featureIndices
     end
     
     properties
@@ -18,6 +20,9 @@ classdef BaseModel < handle
         time_series_data
         hdf5_file_id
         dataset_id
+        
+        % view related
+        lastSparkline = 1
     end
     
     properties (SetAccess = private)
@@ -26,11 +31,13 @@ classdef BaseModel < handle
     events
         timeSeriesChanged
         frequencySeriesChanged
+        currentTimeSeriesChanged
         errorOccurred
     end
     
     methods
         function self = BaseModel()
+            self.recalculate_featureindices();
         end
     end
     
@@ -68,33 +75,52 @@ classdef BaseModel < handle
             self.n_timeSeries = 0;
             self.currentDataIndex = 0;
         end
+
+        function recalculate_featureindices(self)
+            self.featureIndices = containers.Map(...
+                self.metadataNames, 1:numel(self.metadataNames));
+        end
         
         function load_textfile(self, filename)
             self.reset_data();
-            [data, metadata] = load_kistler_txt(filename);
-            self.n_timeSeries = 1;
-            self.timeSeries{self.n_timeSeries} = data;
-            self.currentDataIndex = self.n_timeSeries;
-            
-            self.write_features_and_metadata(metadata);
+            if ~iscell(filename)
+                filename = {filename};
+            end
+            for i = 1 : numel(filename)
+                [data, metadata] = load_kistler_txt(filename{i});
+                self.n_timeSeries = i;
+                self.timeSeries{self.n_timeSeries} = data;
+                self.currentDataIndex = self.n_timeSeries;
+
+                self.write_features_and_metadata(metadata);
+            end
+            self.lastSparkline = self.n_timeSeries;
             notify(self, 'timeSeriesChanged');
         end
         
         
         function write_features_and_metadata(self, metadata)
-            self.metadata{self.currentDataIndex, self.featureNames('Filename')} = ...
+            self.metadata{self.currentDataIndex, self.featureIndices('Filename')} = ...
                 metadata.filename;
-            self.metadata{self.currentDataIndex, self.featureNames('SamplingRate')} = ...
+            self.metadata{self.currentDataIndex, self.featureIndices('Length')} = ...
+                metadata.length;
+            self.metadata{self.currentDataIndex, self.featureIndices('SamplingRate')} = ...
                 metadata.sampling_rate;
         end
         
         function append_textfile(self, filename)
-            [data, metadata] = load_kistler_txt(filename);
-            self.n_timeSeries = self.n_timeSeries + 1;
-            self.timeSeries{self.n_timeSeries} = data;
-            self.currentDataIndex = self.n_timeSeries;
-            
-            self.write_features_and_metadata(metadata);
+            if ~iscell(filename)
+                filename = {filename};
+            end
+            for i = 1 : numel(filename)
+                [data, metadata] = load_kistler_txt(filename{i});
+                self.n_timeSeries = self.n_timeSeries + 1;
+                self.timeSeries{self.n_timeSeries} = data;
+                self.currentDataIndex = self.n_timeSeries;
+                
+                self.write_features_and_metadata(metadata);
+            end
+            self.lastSparkline = self.n_timeSeries;
             notify(self, 'timeSeriesChanged');
         end
         

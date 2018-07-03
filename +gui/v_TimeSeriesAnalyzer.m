@@ -38,6 +38,10 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
         settings_width = 150
     end
     
+    events
+        sparklineAxesChanged
+    end
+    
     % Figure management methods
     methods (Access = public)
         
@@ -278,6 +282,7 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                 'Position', [0.1 0.1 0.9 0.9],...
                 'FontSize',9,...
                 'Tag', 'time_axis',...
+                'NextPlot', 'replacechildren',...
                 'Box', 'on');
             xlabel(self.axes_handle.time_axis, 'Time (s)');
             ylabel(self.axes_handle.time_axis, 'Amplitude (dB_{AE})');
@@ -286,6 +291,10 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
         end
         
         function draw_sparkline_axes(self)
+            for i = 1 : numel(self.axes_handle.sparkline_axis)
+                delete(self.axes_handle.sparkline_axis{i});
+            end
+            self.axes_handle.sparkline_axis = cell(1,self.baseModel.n_timeSeries);
             for i = 1 : self.baseModel.n_timeSeries
                 self.axes_handle.sparkline_axis{i} = axes(...
                     'Parent', self.tabs_handle.sparklinestab,...
@@ -297,10 +306,9 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                     'UserData',struct('index',i),...
                     'NextPlot','add');
                 
-                
                 timeSeries = self.baseModel.timeSeries{i};
                 sampleRate = self.baseModel.metadata{self.baseModel.currentDataIndex,...
-                    self.baseModel.featureNames('SamplingRate')};
+                    self.baseModel.featureIndices('SamplingRate')};
                 t = 1 : numel(timeSeries);
                 t = t'./sampleRate;
                 plothandle = plot(self.axes_handle.sparkline_axis{i}, t, timeSeries,...
@@ -310,11 +318,14 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
                 set(self.axes_handle.sparkline_axis{i}, 'XTick',[]);
                 set(self.axes_handle.sparkline_axis{i}, 'YTick',[]);
             end
+            notify(self, 'sparklineAxesChanged');
         end
         
         function set_listener(self)
             self.listener_handle.timeSeries = event.listener(self.baseModel, 'timeSeriesChanged',...
                 @(source,event) self.onChangedTimeSeries(source,event));
+            self.listener_handle.currentTimeSeries = event.listener(self.baseModel, 'currentTimeSeriesChanged',...
+                @(source,event) self.onChangedCurrentTimeSeries(source,event));
         end
     end
     
@@ -459,14 +470,79 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
     % Event Methods
     methods (Access = private)
         function onChangedTimeSeries(self, source, event)
+            self.drawCurrentTimeSeries();
+            self.draw_sparkline_axes();
+        end
+        
+        function onChangedCurrentTimeSeries(self, source, event)
+            self.drawCurrentTimeSeries();
+        end
+        
+        function drawCurrentTimeSeries(self)
             timeSeries = self.baseModel.timeSeries{self.baseModel.currentDataIndex};
             sampleRate = self.baseModel.metadata{self.baseModel.currentDataIndex,...
-                self.baseModel.featureNames('SamplingRate')};
+                self.baseModel.featureIndices('SamplingRate')};
             t = 1 : numel(timeSeries);
             t = t'./sampleRate;
-            plot(self.axes_handle.time_axis, t, timeSeries,...
+            cla(self.axes_handle.time_axis);
+            self.axes_handle.rectangle = rectangle(self.axes_handle.time_axis,...
+                'Position',[500, -0.06, 500, 0.12],...
+                'FaceColor',AnalyzerModel.Colors.YlGnBu1,...
+                'LineStyle','none',...
+                'Visible','on');
+            line(self.axes_handle.time_axis, t, timeSeries,...
                     'Color',AnalyzerModel.Colors.YlGnBu6);
-            self.draw_sparkline_axes();
+            self.axes_handle.leftline = line(self.axes_handle.time_axis,...
+                [500 500], [-0.06 0.06], ...
+                'Tag','leftline',...
+                'LineWidth',1, 'Color',AnalyzerModel.Colors.YlGnBu1,...
+                'ButtonDownFcn', @(source, event)self.startDragLine_Fcn(source,event),...
+                'Visible','off');
+            self.axes_handle.rightline = line(self.axes_handle.time_axis,...
+                [1000 1000], [-0.06 0.06], ...
+                'Tag','rightline',...
+                'LineWidth',1, 'Color',AnalyzerModel.Colors.YlGnBu1,...
+                'ButtonDownFcn', @(source, event)self.startDragLine_Fcn(source,event),...
+                'Visible','off');
+            XLim = self.axes_handle.time_axis.XLim;
+            YLim = self.axes_handle.time_axis.YLim;
+            self.axes_handle.rectangle.Position(1) = (XLim(2)-XLim(1))/3;
+            self.axes_handle.rectangle.Position(3) = (XLim(2)-XLim(1))/3;
+            self.axes_handle.rectangle.Position(2) = YLim(1)*0.98;
+            self.axes_handle.rectangle.Position(4) = (YLim(2) - YLim(1))*0.98;
+            self.axes_handle.leftline.XData = (XLim(2)-XLim(1))/3*[1 1];
+            self.axes_handle.leftline.YData = YLim*0.98;
+            self.axes_handle.rightline.XData = (XLim(2)-XLim(1))*2/3*[1 1];
+            self.axes_handle.rightline.YData = YLim*0.98;
+            self.axes_handle.rectangle.Visible = 'on';
+            self.axes_handle.leftline.Visible = 'on';
+            self.axes_handle.rightline.Visible = 'on';
+        end
+    end
+    
+    % plot related methods
+    methods (Access = public)
+        function startDragLine_Fcn(self, source, event)
+            self.figure_handle.WindowButtonMotionFcn = @(src,evnt) self.draggingFcn(source);
+            self.figure_handle.WindowButtonUpFcn = @self.stopDragFcn;
+        end
+        
+        function stopDragFcn(self, source, event)
+            self.figure_handle.WindowButtonMotionFcn = '';
+        end
+        
+        function draggingFcn(self, source, event)
+            pt = self.axes_handle.time_axis.CurrentPoint;
+            source.XData = pt(1)*[1 1];
+            old_width = self.axes_handle.rectangle.Position(3);
+            old_x = self.axes_handle.rectangle.Position(1);
+            
+            if strcmp(source.Tag, 'leftline')
+                self.axes_handle.rectangle.Position(1) = pt(1);
+                self.axes_handle.rectangle.Position(3) = max(0.1, old_x + old_width - pt(1));
+            elseif strcmp(source.Tag, 'rightline')
+                self.axes_handle.rectangle.Position(3) = max(0.1, pt(1) - old_x);
+            end
         end
     end
     
