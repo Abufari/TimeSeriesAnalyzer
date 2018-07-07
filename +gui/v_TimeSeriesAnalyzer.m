@@ -1,12 +1,9 @@
 classdef v_TimeSeriesAnalyzer < handle & dynamicprops
     
     properties (Access=public)
-        initial_width = 1418;
-        initial_height = 815;
-        initial_position_width = -1600;
-        initial_position_height = 156;
+        initial_position
 
-        figure_name = 'Time Series Analyzer';
+        figure_name = 'Time Series Analyzer'
     end
 
     properties (Dependent = true, SetAccess = private, GetAccess = public)
@@ -66,6 +63,9 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
         function init(self)
             % Close GUI if necessary
             self.close();
+            
+            % load initial values from BaseModel
+            self.initial_position = self.baseModel.startupPosition;
 
             % Reinitialize handles
             self.axes_data = struct();
@@ -114,10 +114,7 @@ classdef v_TimeSeriesAnalyzer < handle & dynamicprops
     methods (Access = private)
         function create_figure(self)
             self.figure_handle = figure(...
-                'Position',[self.initial_position_width,...
-                            self.initial_position_height,...
-                            self.initial_width,...
-                            self.initial_height],...
+                'Position',[self.initial_position],...
                 'Units', 'pixels',...
                 'Visible','off',...
                 'Name', self.figure_name,...

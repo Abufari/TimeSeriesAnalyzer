@@ -1,6 +1,10 @@
 classdef ModalAnalysisModel < handle
     
     properties (SetObservable = true)
+        currentDataIndex
+    end
+    
+    properties (Dependent = true)
         currentTimeData
         currentFrequencyData
     end
@@ -18,16 +22,23 @@ classdef ModalAnalysisModel < handle
         frequencySeriesData
         
         % Structs
-        timeSeriesMetaDataHead = struct(...
-            'Name',{},...
-            'Keywords',{})
+        timeSeriesMetaDataHead
         featureStruct = struct(...
             'Name',{},...
             'CodeString',{},...
             'Keywords',{});
 
+        timeSeriesMetadataColumnMap
         timeSeriesFilenameRowMap
         timeSeriesFeatureColumnMap
+        
+        preallocationNumber = 1000
+    end
+    
+    properties
+        length_timeSeries = 0
+        length_metadata = 0
+        length_features = 0
     end
         
     events
@@ -36,28 +47,55 @@ classdef ModalAnalysisModel < handle
     end
     
     methods
-        function self = ModelAnalysisModel(self)
+        function self = ModalAnalysisModel()
             self.init();
         end
         
         function init(self)
             self.populate_metadata();
-            self.populate_featureMatrix();
+            self.populate_featureStruct();
             self.recalculate_metadata_map();
+            self.preallocate_arrays();
         end
     end
     
     % Getter
     methods
+
+        function index = getMetadataIndex(columnname)
+            index = get_meta_data(columnname, 'column');
+        end
+
+        function index = getFeatureIndex(featurename)
+            index = get_feature_data(featurename);
+        end
+        
         function metadata = getMetaData(rows_, columns_)
             rows = get_meta_data(rows_, 'row');
             columns = get_meta_data(columns_, 'column');
             metadata = self.timeSeriesMetaData(rows, columns);
         end
+        
+        function data = get.currentTimeData(self)
+            data = self.timeSeriesData{self.currentDataIndex};
+        end
+
+        function data = get.currentFrequencyData(self)
+            data = calculate_fft(self.currentTimeData);
+        end
+    end
+
+    % Setter
+    methods
+        function index = addNewTimeSeries(self, timeSeries)
+        end
     end
 
     methods (Access = private)
         function populate_metadata(self)
+            self.timeSeriesMetaDataHead = struct(...
+                'Name',{},...
+                'Keywords',{});
             metadata = {...
                 'Filename',...
                 'Length',...
@@ -66,35 +104,67 @@ classdef ModalAnalysisModel < handle
                 'Channel',...
                 'Keywords',...
                 'ToT'};
-            for i = 1 : length(metadata)
-                self.timeSeriesMetaData(i) = struct(...
-                    'Name',metadata{i},...
-                    'Keywords',{});
+            self.length_metadata = length(metadata);
+            for i = 1 : self.length_metadata
+                self.timeSeriesMetaDataHead(i).Name = metadata{i};
             end
         end
         
-        function populate_featureMatrix(self)
+        function populate_featureStruct(self)
             features = {...
                 'Length',...
                 'Mean',...
                 'Max'};
+            self.length_features = length(features);
             for i = 1 : length(features)
-                self.featureMatrix(i) = struct(...
-                    'CodeString',{},...
-                    'Name',features{i},...
-                    'Keywords',{});
+                self.featureStruct(i).Name = features{i};
             end
         end
         
         function recalculate_metadata_map(self)
-            self.timeSeriesFilenameRowMap = containers.Map;
+            self.timeSeriesMetadataColumnMap = containers.Map;
             for i = 1 : length(self.timeSeriesMetaDataHead)
-                self.timeSeriesFilenameRowMap(self.timeSeriesMetaDataHead(i).Filename) = i;
+                self.timeSeriesMetadataColumnMap(self.timeSeriesMetaDataHead(i).Name) = i;
             end
             
+            self.timeSeriesFeatureColumnMap = containers.Map;
             for i = 1 : length(self.featureStruct)
                 self.timeSeriesFeatureColumnMap(self.featureStruct(i).Name) = i;
             end
+        end
+
+        function recalculate_filename_map(self)
+            self.timeSeriesFilenameRowMap = containers.Map;
+            for i = 1 : self.length_timeSeries
+                filenameindex = self.timeSeriesMetadataColumnMap('Filename');
+                filename = self.timeSeriesMetaData(i, filenameindex);
+                self.timeSeriesFilenameRowMap(filename) = i;
+            end
+        end
+        
+        function preallocate_arrays(self)
+            self.timeSeriesData = cell(1, self.preallocationNumber);
+            self.timeSeriesMetaData = nan(self.preallocationNumber,self.length_metadata);
+            self.featureMatrix = nan(self.preallocationNumber, self.length_features);
+        end
+        
+        function index = add_timeSeriesData(self, timeSerie)
+            index = self.length_timeSeries + 1;
+            self.timeSeriesData{index} = timeSerie;
+            self.length_timeSeries = index;
+        end
+
+        function index = add_timeSeriesMetadata(self, index, metadata)
+            fields = fieldnames(metadata);
+            for i = 1 : length(fields)
+                index = self.timeSeriesMetadataColumnMap(fields{i});
+                self.add_metadata_to_array(index, metadata.(fields{i}))
+            end
+            self.recalculate_filename_map();
+        end
+        
+        function index = add_metadata_to_array(self, index, value)
+            self.timeSeriesMetaData(self.length_timeSeries, index) = value;
         end
         
         function range = get_meta_data(range_, type)

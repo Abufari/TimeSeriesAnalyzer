@@ -57,7 +57,10 @@ classdef MainController < handle
     % Callback Methods
     methods
         
-        function closeRequestFcn(self)
+        function closeRequestFcn(self, object, event)
+            self.model.startupPosition = self.view.figure_handle.Position;
+            self.model.closeFcn();
+            delete(gcf);
         end
         
         

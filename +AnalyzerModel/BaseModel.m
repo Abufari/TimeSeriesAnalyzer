@@ -23,6 +23,7 @@ classdef BaseModel < handle
         
         % view related
         lastSparkline = 1
+        startupPosition = [-1600 156 1418 815]
     end
     
     properties (SetAccess = private)
@@ -37,6 +38,7 @@ classdef BaseModel < handle
     
     methods
         function self = BaseModel()
+            self.init();
             self.recalculate_featureindices();
         end
     end
@@ -66,10 +68,30 @@ classdef BaseModel < handle
         function resetAll(self)
             self.reset_data();
         end
+        
+        function init(self)
+            settings = load_settings();
+            try
+                self.startupPosition = settings('startupPosition');
+            catch
+            end
+        end
+        
+        function closeFcn(self)
+            settings = containers.Map();
+            settings('startupPosition') = self.startupPosition;
+            status = save_settings(settings);
+            if ~status
+                fprintf('Saving baseModel settings unsuccessful.');
+            end
+        end
+        
+        
     end
     
     % Load and save
     methods (Access = private)
+        
         function reset_data(self)
             self.timeSeries = cell(1,1);
             self.n_timeSeries = 0;
