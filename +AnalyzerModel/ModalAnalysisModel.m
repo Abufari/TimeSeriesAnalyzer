@@ -13,6 +13,21 @@ classdef ModalAnalysisModel < handle
         baseModel
     end
     
+    properties (Access = public)
+        metadata_definition = {...
+                'Filename',...
+                'Length',...
+                'SamplingRate',...
+                'Date',...
+                'Channel',...
+                'Keywords',...
+                'ToT'};
+        feature_definition = {...
+                'Length',...
+                'Mean',...
+                'Max'};
+    end
+    
     % Raw data
     properties (SetAccess = private, GetAccess = public)
         timeSeriesData
@@ -35,7 +50,7 @@ classdef ModalAnalysisModel < handle
         preallocationNumber = 1000
     end
     
-    properties
+    properties (SetAccess = private)
         length_timeSeries = 0
         length_metadata = 0
         length_features = 0
@@ -52,8 +67,8 @@ classdef ModalAnalysisModel < handle
         end
         
         function init(self)
-            self.populate_metadata();
-            self.populate_featureStruct();
+            self.init_metadataIndexing();
+            self.init_featureIndexing();
             self.recalculate_metadata_map();
             self.preallocate_arrays();
         end
@@ -62,18 +77,16 @@ classdef ModalAnalysisModel < handle
     % Getter
     methods
 
-        function index = getMetadataIndex(columnname)
-            index = get_meta_data(columnname, 'column');
-        end
-
-        function index = getFeatureIndex(featurename)
-            index = get_feature_data(featurename);
+        function index = getMetadataIndex(self, columnname)
+            index = self.get_metadata_index(columnname);
         end
         
-        function metadata = getMetaData(rows_, columns_)
-            rows = get_meta_data(rows_, 'row');
-            columns = get_meta_data(columns_, 'column');
-            metadata = self.timeSeriesMetaData(rows, columns);
+        function index = getFilenameIndex(self, filename)
+            index = self.get_filename_index(filename);
+        end
+
+        function index = getFeatureIndex(self, featurename)
+            index = self.get_feature_index(featurename);
         end
         
         function data = get.currentTimeData(self)
@@ -83,38 +96,47 @@ classdef ModalAnalysisModel < handle
         function data = get.currentFrequencyData(self)
             data = calculate_fft(self.currentTimeData);
         end
+        
+        function init_metadataIndexing(self)
+            self.set_metadatahead();
+            self.recalculate_metadata_map();
+        end
+        
+        function init_featureIndexing(self)
+            self.set_featureStruct();
+            self.recalculate_metadata_map();
+        end
+        
+        function calculate_featureVector(self)
+            self.
+        end
     end
 
     % Setter
     methods
-        function index = addNewTimeSeries(self, timeSeries)
+        function index = addNewTimeSeries(self, timeSerie)
+            index = self.add_timeSeriesData(timeSerie);
+        end
+        
+        function addTimeSeriesMetadata(self, index, metadata)
+            self.add_timeSeriesMetadata(index, metadata);
         end
     end
 
     methods (Access = private)
-        function populate_metadata(self)
+        function set_metadatahead(self)
             self.timeSeriesMetaDataHead = struct(...
                 'Name',{},...
                 'Keywords',{});
-            metadata = {...
-                'Filename',...
-                'Length',...
-                'SamplingRate',...
-                'Date',...
-                'Channel',...
-                'Keywords',...
-                'ToT'};
+            metadata = self.metadata_definition;
             self.length_metadata = length(metadata);
             for i = 1 : self.length_metadata
                 self.timeSeriesMetaDataHead(i).Name = metadata{i};
             end
         end
         
-        function populate_featureStruct(self)
-            features = {...
-                'Length',...
-                'Mean',...
-                'Max'};
+        function set_featureStruct(self)
+            features = self.feature_definition;
             self.length_features = length(features);
             for i = 1 : length(features)
                 self.featureStruct(i).Name = features{i};
@@ -137,14 +159,14 @@ classdef ModalAnalysisModel < handle
             self.timeSeriesFilenameRowMap = containers.Map;
             for i = 1 : self.length_timeSeries
                 filenameindex = self.timeSeriesMetadataColumnMap('Filename');
-                filename = self.timeSeriesMetaData(i, filenameindex);
+                filename = self.timeSeriesMetaData{i, filenameindex};
                 self.timeSeriesFilenameRowMap(filename) = i;
             end
         end
         
         function preallocate_arrays(self)
             self.timeSeriesData = cell(1, self.preallocationNumber);
-            self.timeSeriesMetaData = nan(self.preallocationNumber,self.length_metadata);
+            self.timeSeriesMetaData = cell(self.preallocationNumber,self.length_metadata);
             self.featureMatrix = nan(self.preallocationNumber, self.length_features);
         end
         
@@ -152,65 +174,35 @@ classdef ModalAnalysisModel < handle
             index = self.length_timeSeries + 1;
             self.timeSeriesData{index} = timeSerie;
             self.length_timeSeries = index;
+            self.currentDataIndex = index;
         end
 
-        function index = add_timeSeriesMetadata(self, index, metadata)
+        function add_timeSeriesMetadata(self, index, metadata)
             fields = fieldnames(metadata);
             for i = 1 : length(fields)
-                index = self.timeSeriesMetadataColumnMap(fields{i});
-                self.add_metadata_to_array(index, metadata.(fields{i}))
+                column_index = self.timeSeriesMetadataColumnMap(fields{i});
+                value = metadata.(fields{i});
+                self.add_metadata_to_array(index, column_index, value);
             end
             self.recalculate_filename_map();
         end
         
-        function index = add_metadata_to_array(self, index, value)
-            self.timeSeriesMetaData(self.length_timeSeries, index) = value;
+        function add_metadata_to_array(self, row_index, column_index, value)
+            self.timeSeriesMetaData{row_index, column_index} = value;
         end
         
-        function range = get_meta_data(range_, type)
-            if isinteger(range_)
-                range = range_;
-            elseif ischar(range_)
-                switch type
-                    case 'row'
-                        range = self.get_meta_data_rows_by_char(range_);
-                    case 'column'
-                        range = self.get_meta_data_columns_by_char(range_);
-                    otherwise
-                        error('passed wrong type. Must be row or column');
-                end
-            elseif iscell(range_)
-                range = 1:length(range_);
-                switch type
-                    case 'row'
-                        for i = 1 : length(range_)
-                            range(i) = self.get_meta_data_rows_by_char(range_{i});
-                        end
-                    case 'column'
-                        for i = 1 : length(range_)
-                            range(i) = self.get_meta_data_columns_by_char(range_{i});
-                        end
-                    otherwise
-                        error('passed wrong type. Must be row or column');
-                end
-            end
+        function index = get_metadata_index(self, columnname)
+            index = self.timeSeriesMetadataColumnMap(columnname);
         end
-
-        function rowline = get_meta_data_rows_by_char(row)
-            if strcmp(row, ':')
-                rowline = [1 size(self.timeSeriesMetaData, 1)];
-            else
-                rowline = self.timeSeriesFilenameRowMap(row);
-            end
+        
+        function index = get_filename_index(self, filename)
+            index = self.timeSeriesFilenameRowMap(filename);
         end
-
-        function columnline = get_meta_data_columns_by_char(column)
-            if strcmp(column, ':')
-                columnline = [1 size(self.timeSeriesMetaData, 1)];
-            else
-                columnline = self.timeSeriesMetaDataColumnMap(column);
-            end
+        
+        function index = get_feature_index(self, featurename)
+            index = self.timeSeriesFeatureColumnMap(featurename);
         end
+        
     end
     
 end
